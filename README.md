@@ -1,4 +1,4 @@
-= PS2 Keyboard for Atari 65XE/130X
+=PS2 Keyboard for Atari 65XE/130X
 
 == Introduction
 
