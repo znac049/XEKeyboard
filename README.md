@@ -56,6 +56,9 @@ PRINT SCREEN. The former only ever generates a key press event (no key release)
 and PRINT SCREEN generates a data stream that is quite different from all the
 others, making it more complicated to decode._
 
+#### Links
+The PS2 keyboard keycode table I used can be found [here](http://www.computer-engineering.org/ps2keyboard/scancodes2.html). Another useful page describing the PS2 keyboard is [here](http://www.computer-engineering.org/ps2protocol/)
+
 ### Hardware
 I used an Arduino UNO for this as I had one and it has enough pins to do the job. Porting
 to another Arduino device would be pretty simple. When allocating pins on other Arduino hardware
