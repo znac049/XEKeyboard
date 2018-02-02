@@ -59,9 +59,9 @@ others, making it more complicated to decode._
 ### Software
 The code in the Arduino has three main jobs:
 
- # Receive data from the PS2 keyboard
- # Process the PS2 keycodes and mapping them to their equivalent Atari key (if they have one)
- # Mimic the Atari keyboard at a hardware level
+ 1. Receive data from the PS2 keyboard
+ 1. #Process the PS2 keycodes and mapping them to their equivalent Atari key (if they have one)
+ 1. #Mimic the Atari keyboard at a hardware level
 
 The code relies heavily on pin change interrupts. In my initial release, I've opted to
 use a freely available library which makes managing these interrupts very simple. It
