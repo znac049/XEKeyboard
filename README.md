@@ -60,8 +60,8 @@ others, making it more complicated to decode._
 The code in the Arduino has three main jobs:
 
  1. Receive data from the PS2 keyboard
- 1. #Process the PS2 keycodes and mapping them to their equivalent Atari key (if they have one)
- 1. #Mimic the Atari keyboard at a hardware level
+ 1. Process the PS2 keycodes and mapping them to their equivalent Atari key (if they have one)
+ 1. Mimic the Atari keyboard at a hardware level
 
 The code relies heavily on pin change interrupts. In my initial release, I've opted to
 use a freely available library which makes managing these interrupts very simple. It
@@ -69,7 +69,7 @@ gets around the fact that most Arduinos only have three pin change interrupt vec
 vector handling the change events for a particular group of pins. The library I used allows
 individual callbacks for every pin. This means that behind the scenes, more time is wasted
 in the interrupt handlers deciding which pin has changed and then invoking the appropriate
-callback. While it works well, it goes against the grain of too many years trying to
+callback. While it works well, it goes against the grain of too many years spent trying to
 shave cpu cycles off of interrupt handlers, so a future version will "fix" this.
 
 #### Reading from the PS2 keyboard
@@ -89,6 +89,19 @@ data signal corruption by timing out a keycode read if too much time has elapsed
 the first bit arrived.
 
 #### Processing PS2 keycodes
+Processing keycodes is pretty simple and consists of a polling loop which waits for
+key data to arrive in the input buffer. Once sufficient bytes have been read to identify
+whether its a key press or release and whether its a stadard or extended keycode, the arduino
+updates its internal state map of the Atari's current switch state, i.e. which keys on
+the Atari virtual keyboard are currently being pressed.
+
+Updating the virtual keyboard state is essentially one of four actions:
+ * Keys map to a point in the 8x8 matrix - kr1Matrix[64]
+ * BREAK/CONTROL/SHIFT keys map to the 1x8 matrix - kr2Matrix[8]
+ * START/SELECT/OPTION keys update internal state (just for debugging purposes) and directly drive the START, SELECT and OPTION signals on the Atari.
+ * PS2 PAUSE/BREAK key. When this key is pressed, the Arduino immediately
+asserts the RESET signal on the Atari which causes the Reset timer to fire. This signal
+is asserted for 250mS. There is no "key released" keycode for this key.
 
 #### Mimic the Atari keyboard hardware
 
