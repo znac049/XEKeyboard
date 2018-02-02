@@ -56,12 +56,21 @@ PRINT SCREEN. The former only ever generates a key press event (no key release)
 and PRINT SCREEN generates a data stream that is quite different from all the
 others, making it more complicated to decode._
 
+### Hardware
+I used an Arduino UNO for this as I had one and it has enough pins to do the job. Porting
+to another Arduino device would be pretty simple. When allocating pins on other Arduino hardware
+consider the following:
+
+ * Ensure that the K0 signal from the POKEY and the PS2 keyboard Clock signals are connected to different Pin Change Interrupt groups.
+ * The current code assumes that the six key address signals (K0:5) from the POKEY are connected to the lower six bits of a single port on the ATMega device, with K0 as bit 0 through to K5 on bit 5. It means I can read the address as a single port access so is fast. If you can't do this, you'll need to fix the code that reads the address so that it builds the address by reading and combining whichever pins you use.
+ 
 ### Software
-The code in the Arduino has three main jobs:
+The code in the Arduino has three(four) main jobs:
 
  1. Receive data from the PS2 keyboard
  1. Process the PS2 keycodes and mapping them to their equivalent Atari key (if they have one)
  1. Mimic the Atari keyboard at a hardware level
+ 1. If compiled in, pressing F1 will cause a load of information to be sent to the serial port (57600 baud)
 
 The code relies heavily on pin change interrupts. In my initial release, I've opted to
 use a freely available library which makes managing these interrupts very simple. It
@@ -71,6 +80,8 @@ individual callbacks for every pin. This means that behind the scenes, more time
 in the interrupt handlers deciding which pin has changed and then invoking the appropriate
 callback. While it works well, it goes against the grain of too many years spent trying to
 shave cpu cycles off of interrupt handlers, so a future version will "fix" this.
+
+_Note. key presses are active low, so pressing a key pulls a signal down to logic 0._
 
 #### Reading from the PS2 keyboard
 Data from the PS2 keyboard consists of a stream of bits, grouped into 11 bit chunks which,
@@ -101,9 +112,18 @@ Updating the virtual keyboard state is essentially one of four actions:
  * START/SELECT/OPTION keys update internal state (just for debugging purposes) and directly drive the START, SELECT and OPTION signals on the Atari.
  * PS2 PAUSE/BREAK key. When this key is pressed, the Arduino immediately
 asserts the RESET signal on the Atari which causes the Reset timer to fire. This signal
-is asserted for 250mS. There is no "key released" keycode for this key.
+is asserted for 250mS. There is no "key released" keycode for this key. The code
+which deasserts RESET is hidden in the getKeyCode() function as this is the only
+place where code blocks inside the main loop.
+
 
 #### Mimic the Atari keyboard hardware
+This is the simplest bit of the code so far. All the information we need to emulate
+the Atari keyboard signals have already been collected by the main program loop. Now
+all that is needed is to monitor the 6 key counter bits from the POKEY (K0-K5) and
+whenever the address changes, present the appropriate bits from the kr1Matrix and
+kr2Matrix onto the KR1 and KR2 POKEY signals. A pin change interrupt routine hanging
+off of the K0 (LSB key address) POKEY signal.
 
 ## Future ideas
 There are 10 "holes" in the XE keyboard matrix, which means an additional 10 keyswitches
@@ -112,3 +132,6 @@ keyboard polling or the OS ROM would need updating.
 
 It wouldn't be hard to use one of the unmapped PS2 keys to turn serial debugging on/off.
 At the moment, it is a compile time option.
+
+If there's any interest, I might do a custom PCB that plugs into the POKEY socket
+(the POKEY then plugs into the board).
