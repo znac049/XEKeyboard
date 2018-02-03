@@ -75,14 +75,12 @@ The code in the Arduino has three(four) main jobs:
  1. Mimic the Atari keyboard at a hardware level
  1. If compiled in, pressing F1 will cause a load of information to be sent to the serial port (57600 baud)
 
-The code relies heavily on pin change interrupts. In my initial release, I've opted to
-use a freely available library which makes managing these interrupts very simple. It
-gets around the fact that most Arduinos only have three pin change interrupt vectors, each
-vector handling the change events for a particular group of pins. The library I used allows
-individual callbacks for every pin. This means that behind the scenes, more time is wasted
-in the interrupt handlers deciding which pin has changed and then invoking the appropriate
-callback. While it works well, it goes against the grain of too many years spent trying to
-shave cpu cycles off of interrupt handlers, so a future version will "fix" this.
+The code relies on pin change interrupts. The
+Arduino only has three pin change interrupt vectors, each
+vector handling the change events for a particular group of pins (Ports B, C and D).
+Only two pins need to generate pin change interrupts, POKEY K0 and the PS2 keyboard clock, so it
+keeps things simple by making sure those two pins are in different pin change interrupt
+groups.
 
 _Note. key presses are active low, so pressing a key pulls a signal down to logic 0._
 
