@@ -10,10 +10,8 @@
  * Orange   Clock
  * Yellow   GND
  */
-#define CLOCK_PIN 3
-#define DATA_PIN 2  
-
-// The Atari signals
+#define PS2_CLOCK_PIN 3
+#define PS2_DATA_PIN 2  
 
 /*
  * Connecting to the Atari 65XE
@@ -156,7 +154,14 @@
 #define ATARI_KEY_OPTION 130
 #define ATARI_KEY_RESET 131
 
-const PROGMEM byte keymap[128] = {
+/*
+ * Table for mapping core PS2 key codes to ATARI keyboard codes.
+ * 
+ * See the table at http://www.computer-engineering.org/ps2keyboard/scancodes2.html
+ * for details of codes. Core codes are those codes which have a single byte 
+ * "key pressed" code.
+ */
+const PROGMEM byte coreKeymap[128] = {
   ATARI_NOKEY,     ATARI_KEY_HELP,  ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,    ATARI_NOKEY,      ATARI_KEY_OPTION, 
   ATARI_NOKEY,     ATARI_KEY_START, ATARI_KEY_BREAK, ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_TAB,  ATARI_NOKEY,      ATARI_NOKEY, 
   
@@ -182,7 +187,14 @@ const PROGMEM byte keymap[128] = {
   ATARI_KEY_SELECT,ATARI_KEY_PLUS,  ATARI_KEY_A,     ATARI_KEY_MINUS, ATARI_KEY_TIMES, ATARI_KEY_9,    ATARI_NOKEY,      ATARI_KEY_RESET
 };
 
-const PROGMEM byte altKeymap[128] = {
+/*
+ * Table for mapping core PS2 key codes to ATARI keyboard codes.
+ * 
+ * See the table at http://www.computer-engineering.org/ps2keyboard/scancodes2.html
+ * for details of codes. Core codes are those codes which have a double byte 
+ * "key pressed" code.
+ */
+const PROGMEM byte extendedKeymap[128] = {
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,
 
@@ -208,6 +220,10 @@ const PROGMEM byte altKeymap[128] = {
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY
 };
 
+
+/*
+ * Virtual Atari keyboard state variables
+ */
 #define NUM_KR1_KEYS 64       // 8x8
 byte kr1Matrix[NUM_KR1_KEYS];
 
@@ -218,15 +234,6 @@ byte kr2Matrix[NUM_KR2_KEYS];
 #define SWITCH_CLOSED LOW
 
 #define RESET_MILLIS 250      // How long to assert the RESET line when BREAK is pressed
-
-/* PS2 scancodes found here: http://www.computer-engineering.org/ps2keyboard/scancodes2.html */
-
-// PS2 keyboard scan code buffer
-#define KEY_BUFF_SIZE 4
-byte keyBuff[KEY_BUFF_SIZE];
-volatile int head = 0;
-volatile int tail = 0; 
-
 unsigned long resetAssertedTime = 0;
 bool resetInProgress = false;
 
@@ -234,7 +241,16 @@ bool startKey = SWITCH_OPEN;
 bool selectKey = SWITCH_OPEN;
 bool optionKey = SWITCH_OPEN;
 
-// Interrupt handler for the PS2 keyboard clock
+
+// PS2 keyboard scan code buffer - doesn't need to be very big
+#define KEY_BUFF_SIZE 4
+byte keyBuff[KEY_BUFF_SIZE];
+volatile int head = 0;
+volatile int tail = 0; 
+
+/*
+ * PS2 Clock interrupt handler
+ */
 void ps2ClockInt(const char *userData, bool pinstate) {
   static unsigned long prevIntTime = 0;
   static unsigned long now;
@@ -242,7 +258,7 @@ void ps2ClockInt(const char *userData, bool pinstate) {
   static int data = 0;
   byte val;
 
-  val = digitalRead(DATA_PIN);
+  val = digitalRead(PS2_DATA_PIN);
   
   now = millis();
   if (now - prevIntTime > 250) {
@@ -266,8 +282,12 @@ void ps2ClockInt(const char *userData, bool pinstate) {
   }
 }
 
-// Interrupt handler for Atari keyboard row/col outputs from
-// POKEY change
+
+/* 
+ * Interrupt handler for Atari keyboard row/col address outputs from
+ * the POKEY. Triggered by a rising or falling edge on the K0 signal
+ * from the POKEY.
+ */
 void matrixAddressChangeInt() {
   byte addr = PINC & 0x3f;
   byte row = addr>>3;
@@ -276,31 +296,39 @@ void matrixAddressChangeInt() {
   digitalWrite(ATARI_PIN_KR2, kr2Matrix[row]);
 }
 
+
+/*
+ * setup
+ */
 void setup() {
+#ifdef DEBUG
   Serial.begin(57600);
   Serial.println("PS2 keyboard to Atari 8-bit translator");
   Serial.println("by Bob Green <bob@wookey.org.uk>, Jan 2018.");
   Serial.println();
+#endif
 
-  pinMode(CLOCK_PIN, INPUT_PULLUP);
-  pinMode(DATA_PIN, INPUT_PULLUP);
+  // PS2 keyboard interface
+  pinMode(PS2_CLOCK_PIN, INPUT_PULLUP);
+  pinMode(PS2_DATA_PIN, INPUT_PULLUP);
 
-  pinMode(ATARI_PIN_ROW0, INPUT_PULLUP);
+  // Atari interface
+  pinMode(ATARI_PIN_ROW0, INPUT_PULLUP);        // POKEY pins K0:5
   pinMode(ATARI_PIN_ROW1, INPUT_PULLUP);
   pinMode(ATARI_PIN_ROW2, INPUT_PULLUP);
-
   pinMode(ATARI_PIN_COL0, INPUT_PULLUP);
   pinMode(ATARI_PIN_COL1, INPUT_PULLUP);
   pinMode(ATARI_PIN_COL2, INPUT_PULLUP);
 
-  pinMode(ATARI_PIN_RESET, OUTPUT);
-  pinMode(ATARI_PIN_KR1, OUTPUT);
-  pinMode(ATARI_PIN_KR2, OUTPUT);
-  pinMode(ATARI_PIN_START, OUTPUT);
-  pinMode(ATARI_PIN_SELECT, OUTPUT);
-  pinMode(ATARI_PIN_OPTION, OUTPUT);
+  pinMode(ATARI_PIN_RESET, OUTPUT);             // Atari RESET signal
+  pinMode(ATARI_PIN_KR1, OUTPUT);               // POKEY KR1 - input for 8x8 matrix
+  pinMode(ATARI_PIN_KR2, OUTPUT);               // POKEY KR2 - input for 1x8 (BSC) matrix
+  pinMode(ATARI_PIN_START, OUTPUT);             // Atari START signal - GTIA
+  pinMode(ATARI_PIN_SELECT, OUTPUT);            // Atari SELECT signal - GTIA
+  pinMode(ATARI_PIN_OPTION, OUTPUT);            // Atari OPTION signal - GTIA
   pinMode(LED_BUILTIN, OUTPUT);
 
+  // All switches default to open, i.e. not pressed
   digitalWrite(ATARI_PIN_RESET, SWITCH_OPEN);
   digitalWrite(ATARI_PIN_KR1, SWITCH_OPEN);
   digitalWrite(ATARI_PIN_KR2, SWITCH_OPEN);
@@ -317,18 +345,97 @@ void setup() {
     kr2Matrix[i] = SWITCH_OPEN;
   }
 
-  // Enable interrupts on PS2 keyboard clock change 
-  PcInt::attachInterrupt(CLOCK_PIN, ps2ClockInt, "", FALLING);
+  /* 
+   *  Enable interrupts on falling edge of PS2 keyboard clock change 
+   */
+  PcInt::attachInterrupt(PS2_CLOCK_PIN, ps2ClockInt, "", FALLING);
 
   /*
-   * Enable interrupts when COL2 changes. In theory we should monitor
-   * ROW0:2 and COL0:2 but monitoring COL2 is enough as it is the LSB
-   * of a six bit counter so it always changes when any of the other 
-   * pins change. Well that's what I assume the POKEY is doing!
+   * Enable interrupts when COL2 changes, falling or rising edges
    */
    PcInt::attachInterrupt(ATARI_PIN_COL2, matrixAddressChangeInt, "", CHANGE);
 }
 
+
+/* 
+ *  Mail polling loop: read PS2 keys, update virtual keyboard
+ *  state.
+ */
+void loop() {
+  byte keyCode = getKeyCode();
+  bool alternative = false;
+  bool pressed = true;
+  byte atariKey;
+  static byte pauseSequence[] = {0x14, 0x77, 0xe1, 0xf0, 0x14, 0xf0, 0x77};
+
+  if (keyCode == 0xe1) {
+    /*
+     * Special case - just one key generates a 0xE1 prefix - the Pause key. There may be a 
+     * cleaner way to deal with this, but this one works - kind of!
+     */
+    bool pause = expect(pauseSequence, 7);
+
+    if (pause) {
+      /*
+       * I'm mapping the 8 byte pause key sequence to a single unused keycode, 0x7f.
+       * Note. This key only ever sends a "key pressed" sequence, and never a "key released"
+       */
+      keyCode = 0x7f;
+    }
+  }
+  
+  while (keyCode & 0x80) {
+    if (keyCode == 0xe0) {
+      alternative = true;
+    }
+    else if (keyCode == 0xf0) {
+      pressed = false;
+    }
+
+    keyCode = getKeyCode();
+  }
+
+  atariKey = (alternative)?pgm_read_byte_near(extendedKeymap + keyCode):pgm_read_byte_near(coreKeymap + keyCode);
+
+#ifdef DEBUG
+  Serial.print(pressed?"Press: ":"Release: ");
+  Serial.print(keyCode, HEX);
+  if (alternative) {
+    Serial.print(" (ext)");
+  }
+
+  if (atariKey == ATARI_NOKEY) {
+    Serial.println(" - not mapped");
+  }
+  else {
+    Serial.print(" -> ");
+    Serial.println(atariKey);
+  }
+
+  /*
+   * When DEBUG is defined, pressing F1 will dump the current keyboard 
+   * state data
+   */
+   if (pressed && !alternative && keyCode == 5) {
+      dumpState();
+      atariKey = ATARI_NOKEY;
+   }
+#endif
+
+  // Update the virtual keyboard state with the Atari equivalent key
+  if (atariKey != ATARI_NOKEY) {
+    keyAction(atariKey, pressed);
+  }
+}
+
+
+/*
+ * Wait for a key code byte from the PS2 keyboard
+ * 
+ * Will block forever if no key pressed.
+ * While waiting it checks to see if there is a RESET operation in progress and
+ * deasserts RESET one the time defined by RESET_MILLIS
+ */
 byte getKeyCode() {
   byte keyCode;
   
@@ -346,6 +453,7 @@ byte getKeyCode() {
   return keyCode;
 }
 
+
 bool expect(const byte *bytes, int count) {
   for (int i=0; i<count; i++) {
     byte key = getKeyCode();
@@ -358,6 +466,10 @@ bool expect(const byte *bytes, int count) {
   return true;
 }
 
+
+/*
+ * Start a RESET sequence - assert the RESET signal and initialise a timer
+ */
 void assertReset() {
   digitalWrite(ATARI_PIN_RESET, SWITCH_CLOSED);
   digitalWrite(LED_BUILTIN, HIGH);
@@ -366,6 +478,11 @@ void assertReset() {
   resetInProgress = true;
 }
 
+
+/*
+ * Check if the RESET sequence timer and once RESET_MILLIS has occurred
+ * deassert RESET.
+ */
 void checkResetTimer() {
   unsigned long now = millis();
 
@@ -376,6 +493,13 @@ void checkResetTimer() {
   }
 }
 
+
+/* 
+ *  Take action when a key has been pressed that needs mapping
+ *  to an Atari key. This mostly involves updating our internal state
+ *  but in a few cases involves driving pins on the Atari side of
+ *  the Arduino.
+ */
 void keyAction(byte atariKey, bool pressed) {
   byte state = pressed?SWITCH_CLOSED:SWITCH_OPEN;
 
@@ -426,69 +550,12 @@ void keyAction(byte atariKey, bool pressed) {
   }
 }
 
-void loop() {
-  byte keyCode = getKeyCode();
-  bool alternative = false;
-  bool pressed = true;
-  byte atariKey;
-  static byte pauseSequence[] = {0x14, 0x77, 0xe1, 0xf0, 0x14, 0xf0, 0x77};
-
-  if (keyCode == 0xe1) {
-    /*
-     * Special case - just one key generates a E1 prefix - the Pause key. There may be a 
-     * cleaner way to deal with this, but this one works - kind of!
-     */
-    bool pause = expect(pauseSequence, 7);
-
-    if (pause) {
-      /*
-       * I'm mapping the 8 byte pause key sequence to a single unused keycode, 0x7f.
-       * Note. This key only ever sends a "key pressed" sequence, and never a "key released"
-       */
-      keyCode = 0x7f;
-    }
-  }
-  
-  while (keyCode & 0x80) {
-    if (keyCode == 0xe0) {
-      alternative = true;
-    }
-    else if (keyCode == 0xf0) {
-      pressed = false;
-    }
-
-    keyCode = getKeyCode();
-  }
-
-  atariKey = (alternative)?pgm_read_byte_near(altKeymap + keyCode):pgm_read_byte_near(keymap + keyCode);
-  Serial.print(pressed?"Press: ":"Release: ");
-  Serial.print(keyCode, HEX);
-  if (alternative) {
-    Serial.print(" (alt)");
-  }
-
-  if (atariKey == ATARI_NOKEY) {
-    Serial.println(" - not mapped");
-  }
-  else {
-    Serial.print(" -> ");
-    Serial.println(atariKey);
-  }
 
 #ifdef DEBUG
-  /*
-   * When DEBUG is defined, pressing F1 will dump the current keyboard 
-   * state data
-   */
-   if (pressed && !alternative && keyCode == 5) {
-      dumpState();
-      atariKey = ATARI_NOKEY;
-   }
-#endif
-  keyAction(atariKey, pressed);
-}
 
-#ifdef DEBUG
+/*
+ * Dump internal state to serial port
+ */
 void dumpState() {
   Serial.println("Keyboard state:");
 
