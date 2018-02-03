@@ -1,6 +1,3 @@
-#include <PinChangeInterruptBoards.h>
-#include <YetAnotherPcInt.h>
-
 #define DEBUG
 
 // The PS2 keyboard signals
@@ -166,15 +163,15 @@ const PROGMEM byte coreKeymap[128] = {
   ATARI_NOKEY,     ATARI_KEY_START, ATARI_KEY_BREAK, ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_TAB,  ATARI_NOKEY,      ATARI_NOKEY, 
   
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_SHIFT, ATARI_NOKEY,     ATARI_KEY_CTRL,  ATARI_KEY_Q,    ATARI_KEY_1,      ATARI_NOKEY, 
-  ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_A,     ATARI_KEY_S,     ATARI_KEY_A,     ATARI_KEY_W,    ATARI_KEY_2,      ATARI_NOKEY, 
+  ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_Z,     ATARI_KEY_S,     ATARI_KEY_A,     ATARI_KEY_W,    ATARI_KEY_2,      ATARI_NOKEY, 
   
   ATARI_NOKEY,     ATARI_KEY_C,     ATARI_KEY_X,     ATARI_KEY_D,     ATARI_KEY_E,     ATARI_KEY_4,    ATARI_KEY_3,      ATARI_NOKEY, 
-  ATARI_NOKEY,     ATARI_KEY_SPACE, ATARI_KEY_V,     ATARI_KEY_F,     ATARI_KEY_T,     ATARI_KEY_R,    ATARI_KEY_E,      ATARI_NOKEY, 
+  ATARI_NOKEY,     ATARI_KEY_SPACE, ATARI_KEY_V,     ATARI_KEY_F,     ATARI_KEY_T,     ATARI_KEY_R,    ATARI_KEY_5,      ATARI_NOKEY, 
   
   ATARI_NOKEY,     ATARI_KEY_N,     ATARI_KEY_B,     ATARI_KEY_H,     ATARI_KEY_G,     ATARI_KEY_Y,    ATARI_KEY_6,      ATARI_NOKEY, 
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_M,     ATARI_KEY_J,     ATARI_KEY_U,     ATARI_KEY_7,    ATARI_KEY_8,      ATARI_NOKEY, 
   
-  ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_K,     ATARI_KEY_I,     ATARI_KEY_O,     ATARI_KEY_0,    ATARI_KEY_9,      ATARI_NOKEY, 
+  ATARI_NOKEY,     ATARI_KEY_COMMA, ATARI_KEY_K,     ATARI_KEY_I,     ATARI_KEY_O,     ATARI_KEY_0,    ATARI_KEY_9,      ATARI_NOKEY, 
   ATARI_NOKEY,     ATARI_KEY_FSTOP, ATARI_KEY_SLASH, ATARI_KEY_L,     ATARI_KEY_SEMI,  ATARI_KEY_P,    ATARI_KEY_MINUS,  ATARI_NOKEY, 
   
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_EQ,   ATARI_NOKEY,      ATARI_NOKEY, 
@@ -184,7 +181,7 @@ const PROGMEM byte coreKeymap[128] = {
   ATARI_NOKEY,     ATARI_KEY_1,     ATARI_NOKEY,     ATARI_KEY_4,     ATARI_KEY_7,     ATARI_NOKEY,    ATARI_NOKEY,      ATARI_NOKEY, 
   
   ATARI_KEY_0,     ATARI_KEY_FSTOP, ATARI_KEY_2,     ATARI_KEY_5,     ATARI_KEY_6,     ATARI_KEY_8,    ATARI_KEY_ESC,    ATARI_NOKEY, 
-  ATARI_KEY_SELECT,ATARI_KEY_PLUS,  ATARI_KEY_A,     ATARI_KEY_MINUS, ATARI_KEY_TIMES, ATARI_KEY_9,    ATARI_NOKEY,      ATARI_KEY_RESET
+  ATARI_KEY_SELECT,ATARI_KEY_PLUS,  ATARI_KEY_3,     ATARI_KEY_MINUS, ATARI_KEY_TIMES, ATARI_KEY_9,    ATARI_NOKEY,      ATARI_KEY_RESET
 };
 
 /*
@@ -248,37 +245,42 @@ byte keyBuff[KEY_BUFF_SIZE];
 volatile int head = 0;
 volatile int tail = 0; 
 
+volatile long kChangeCount = 0;
 /*
  * PS2 Clock interrupt handler
  */
-void ps2ClockInt(const char *userData, bool pinstate) {
+ISR(PCINT2_vect) {
   static unsigned long prevIntTime = 0;
   static unsigned long now;
   static byte numBits = 0;
   static int data = 0;
   byte val;
 
-  val = digitalRead(PS2_DATA_PIN);
+  if (digitalRead(PS2_CLOCK_PIN) == LOW) {
+    // Falling edge
+    //delayMicroseconds(5);
+    val = digitalRead(PS2_DATA_PIN);
   
-  now = millis();
-  if (now - prevIntTime > 250) {
-    // Reset
-    data = numBits = 0;
-  }
-  prevIntTime = now;
-
-  data = (data>>1) | val<<10;
-  numBits++;
-
-  if (numBits == 11) {
-    keyBuff[head] = (data>>1) & 0xff;
-    head++;
-
-    if (head >= KEY_BUFF_SIZE) {
-      head = 0;
+    now = millis();
+    if (now - prevIntTime > 250) {
+      // Reset
+      data = numBits = 0;
     }
+    prevIntTime = now;
 
-    data = numBits = 0;
+    data = (data>>1) | val<<10;
+    numBits++;
+
+    if (numBits == 11) {
+      keyBuff[head] = (data>>1) & 0xff;
+      head++;
+
+      if (head >= KEY_BUFF_SIZE) {
+        head = 0;
+      }
+
+      data = numBits = 0;
+    }
   }
 }
 
@@ -288,9 +290,11 @@ void ps2ClockInt(const char *userData, bool pinstate) {
  * the POKEY. Triggered by a rising or falling edge on the K0 signal
  * from the POKEY.
  */
-void matrixAddressChangeInt() {
+ISR(PCINT1_vect) {
   byte addr = PINC & 0x3f;
   byte row = addr>>3;
+
+  kChangeCount++;
   
   digitalWrite(ATARI_PIN_KR1, kr1Matrix[addr]);
   digitalWrite(ATARI_PIN_KR2, kr2Matrix[row]);
@@ -313,12 +317,12 @@ void setup() {
   pinMode(PS2_DATA_PIN, INPUT_PULLUP);
 
   // Atari interface
-  pinMode(ATARI_PIN_ROW0, INPUT_PULLUP);        // POKEY pins K0:5
-  pinMode(ATARI_PIN_ROW1, INPUT_PULLUP);
-  pinMode(ATARI_PIN_ROW2, INPUT_PULLUP);
-  pinMode(ATARI_PIN_COL0, INPUT_PULLUP);
-  pinMode(ATARI_PIN_COL1, INPUT_PULLUP);
-  pinMode(ATARI_PIN_COL2, INPUT_PULLUP);
+  pinMode(ATARI_PIN_ROW0, INPUT);        // POKEY pins K0:5
+  pinMode(ATARI_PIN_ROW1, INPUT);
+  pinMode(ATARI_PIN_ROW2, INPUT);
+  pinMode(ATARI_PIN_COL0, INPUT);
+  pinMode(ATARI_PIN_COL1, INPUT);
+  pinMode(ATARI_PIN_COL2, INPUT);
 
   pinMode(ATARI_PIN_RESET, OUTPUT);             // Atari RESET signal
   pinMode(ATARI_PIN_KR1, OUTPUT);               // POKEY KR1 - input for 8x8 matrix
@@ -348,12 +352,17 @@ void setup() {
   /* 
    *  Enable interrupts on falling edge of PS2 keyboard clock change 
    */
-  PcInt::attachInterrupt(PS2_CLOCK_PIN, ps2ClockInt, "", FALLING);
+  cli();
+  PCICR |= 0b00000100;        // Enable port D pin change interrupts
+  PCMSK2 |= 0b10001000;       // Port D, pin 3 will interrupt on change
+
 
   /*
-   * Enable interrupts when COL2 changes, falling or rising edges
+   * Enable interrupts when K5:0 change, falling or rising edges
    */
-   PcInt::attachInterrupt(ATARI_PIN_COL2, matrixAddressChangeInt, "", CHANGE);
+  PCICR |= 0b00000010;        // Enable port C pin change interrupts
+  PCMSK1 |= 0b00000001;       // Port C, pin 0 will interrupt on change
+  sei();
 }
 
 
@@ -423,9 +432,9 @@ void loop() {
 #endif
 
   // Update the virtual keyboard state with the Atari equivalent key
-  if (atariKey != ATARI_NOKEY) {
+  //if (atariKey != ATARI_NOKEY) {
     keyAction(atariKey, pressed);
-  }
+  //}
 }
 
 
@@ -449,6 +458,12 @@ byte getKeyCode() {
   if (tail >= KEY_BUFF_SIZE) {
     tail = 0;
   }
+
+#ifdef DEBUG
+  Serial.print(" [");
+  Serial.print(keyCode, HEX);
+  Serial.print("] ");
+#endif
 
   return keyCode;
 }
@@ -591,5 +606,8 @@ void dumpState() {
   }
 
   Serial.println();
+
+  Serial.print("K0:5 change counter: ");
+  Serial.println(kChangeCount);
 }
 #endif
