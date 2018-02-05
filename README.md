@@ -1,4 +1,4 @@
-# Connecting a PS2 keyboard to an Atari 65XE/130XE
+# Connecting a USB keyboard to an Atari 65XE/130XE
 
 ## Introduction
 While we all love the old Atari 8-bit computers, you won't often hear anyone
@@ -10,11 +10,13 @@ to have to do some fairly major flexible track reconstruction. It occurred
 to me that it wouldn't be too difficult to interface an old PS2 keyboard
 to the 65XE with something like an Arduino. This would have a few advantages:
 
- - PS2 keyboards are still pretty easy and cheap to acquire
- - PS2 keyboards, even the really cheap ones, are of an infintely higher quality to the original Atari keyboard
- - Arduinos are cheap
+ - USB keyboards are cheap and easy to acquire
+ - USB keyboards, even the really cheap ones, are of an infintely higher quality to the original Atari keyboard
+ - Arduinos are cheap so will be good for prototyping
 
 It was also a requirement that the Atari wouldn't be aware of the change
+
+The ultimate goal is to create a custom PCB that drops into the XE's POKEY socket.
 
 ## Design
 When I looked at the schematics for the 65XE, I found a slightly more

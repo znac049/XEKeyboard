@@ -1,14 +1,9 @@
-#define DEBUG
+#include <hidboot.h>
+#include <usbhub.h>
+#include <SPI.h>
 
-// The PS2 keyboard signals
-/*
- * Brown    Data
- * Red      +5v
- * Orange   Clock
- * Yellow   GND
- */
-#define PS2_CLOCK_PIN 3
-#define PS2_DATA_PIN 2  
+
+#define DEBUG
 
 /*
  * Connecting to the Atari 65XE
@@ -152,13 +147,10 @@
 #define ATARI_KEY_RESET 131
 
 /*
- * Table for mapping core PS2 key codes to ATARI keyboard codes.
+ * Table for mapping USB key codes to ATARI keyboard codes.
  * 
- * See the table at http://www.computer-engineering.org/ps2keyboard/scancodes2.html
- * for details of codes. Core codes are those codes which have a single byte 
- * "key pressed" code.
  */
-const PROGMEM byte coreKeymap[128] = {
+const PROGMEM byte coreKeymap[256] = {
   ATARI_NOKEY,     ATARI_KEY_HELP,  ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,    ATARI_NOKEY,      ATARI_KEY_OPTION, 
   ATARI_NOKEY,     ATARI_KEY_START, ATARI_KEY_BREAK, ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_TAB,  ATARI_NOKEY,      ATARI_NOKEY, 
   
@@ -181,17 +173,8 @@ const PROGMEM byte coreKeymap[128] = {
   ATARI_NOKEY,     ATARI_KEY_1,     ATARI_NOKEY,     ATARI_KEY_4,     ATARI_KEY_7,     ATARI_NOKEY,    ATARI_NOKEY,      ATARI_NOKEY, 
   
   ATARI_KEY_0,     ATARI_KEY_FSTOP, ATARI_KEY_2,     ATARI_KEY_5,     ATARI_KEY_6,     ATARI_KEY_8,    ATARI_KEY_ESC,    ATARI_NOKEY, 
-  ATARI_KEY_SELECT,ATARI_KEY_PLUS,  ATARI_KEY_3,     ATARI_KEY_MINUS, ATARI_KEY_TIMES, ATARI_KEY_9,    ATARI_NOKEY,      ATARI_KEY_RESET
-};
+  ATARI_KEY_SELECT,ATARI_KEY_PLUS,  ATARI_KEY_3,     ATARI_KEY_MINUS, ATARI_KEY_TIMES, ATARI_KEY_9,    ATARI_NOKEY,      ATARI_KEY_RESET,
 
-/*
- * Table for mapping core PS2 key codes to ATARI keyboard codes.
- * 
- * See the table at http://www.computer-engineering.org/ps2keyboard/scancodes2.html
- * for details of codes. Core codes are those codes which have a double byte 
- * "key pressed" code.
- */
-const PROGMEM byte extendedKeymap[128] = {
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,
 
@@ -239,50 +222,114 @@ bool selectKey = SWITCH_OPEN;
 bool optionKey = SWITCH_OPEN;
 
 
-// PS2 keyboard scan code buffer - doesn't need to be very big
-#define KEY_BUFF_SIZE 4
-byte keyBuff[KEY_BUFF_SIZE];
-volatile int head = 0;
-volatile int tail = 0; 
 
-volatile long kChangeCount = 0;
-/*
- * PS2 Clock interrupt handler
- */
-ISR(PCINT2_vect) {
-  static unsigned long prevIntTime = 0;
-  static unsigned long now;
-  static byte numBits = 0;
-  static int data = 0;
-  byte val;
 
-  if (digitalRead(PS2_CLOCK_PIN) == LOW) {
-    // Falling edge
-    //delayMicroseconds(5);
-    val = digitalRead(PS2_DATA_PIN);
-  
-    now = millis();
-    if (now - prevIntTime > 250) {
-      // Reset
-      data = numBits = 0;
-    }
-    prevIntTime = now;
 
-    data = (data>>1) | val<<10;
-    numBits++;
+class KbdRptParser : public KeyboardReportParser
+{
+    void PrintKey(uint8_t mod, uint8_t key);
 
-    if (numBits == 11) {
-      keyBuff[head] = (data>>1) & 0xff;
-      head++;
+  protected:
+    void OnControlKeysChanged(uint8_t before, uint8_t after);
+    void OnKeyDown  (uint8_t mod, uint8_t key);
+    void OnKeyUp  (uint8_t mod, uint8_t key);
+    void OnKeyPressed(uint8_t key);
+};
 
-      if (head >= KEY_BUFF_SIZE) {
-        head = 0;
-      }
+void KbdRptParser::PrintKey(uint8_t m, uint8_t key)
+{
+  MODIFIERKEYS mod;
+  *((uint8_t*)&mod) = m;
+  Serial.print((mod.bmLeftCtrl   == 1) ? "C" : " ");
+  Serial.print((mod.bmLeftShift  == 1) ? "S" : " ");
+  Serial.print((mod.bmLeftAlt    == 1) ? "A" : " ");
+  Serial.print((mod.bmLeftGUI    == 1) ? "G" : " ");
 
-      data = numBits = 0;
-    }
-  }
+  Serial.print(" >");
+  PrintHex<uint8_t>(key, 0x80);
+  Serial.print("< ");
+
+  Serial.print((mod.bmRightCtrl   == 1) ? "C" : " ");
+  Serial.print((mod.bmRightShift  == 1) ? "S" : " ");
+  Serial.print((mod.bmRightAlt    == 1) ? "A" : " ");
+  Serial.println((mod.bmRightGUI    == 1) ? "G" : " ");
+};
+
+void KbdRptParser::OnKeyDown(uint8_t mod, uint8_t key)
+{
+  Serial.print("DN ");
+  PrintKey(mod, key);
+  uint8_t c = OemToAscii(mod, key);
+
+  if (c)
+    OnKeyPressed(c);
 }
+
+void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after) {
+
+  MODIFIERKEYS beforeMod;
+  *((uint8_t*)&beforeMod) = before;
+
+  MODIFIERKEYS afterMod;
+  *((uint8_t*)&afterMod) = after;
+
+  if (beforeMod.bmLeftCtrl != afterMod.bmLeftCtrl) {
+    Serial.println("LeftCtrl changed");
+  }
+  if (beforeMod.bmLeftShift != afterMod.bmLeftShift) {
+    Serial.println("LeftShift changed");
+  }
+  if (beforeMod.bmLeftAlt != afterMod.bmLeftAlt) {
+    Serial.println("LeftAlt changed");
+  }
+  if (beforeMod.bmLeftGUI != afterMod.bmLeftGUI) {
+    Serial.println("LeftGUI changed");
+  }
+
+  if (beforeMod.bmRightCtrl != afterMod.bmRightCtrl) {
+    Serial.println("RightCtrl changed");
+  }
+  if (beforeMod.bmRightShift != afterMod.bmRightShift) {
+    Serial.println("RightShift changed");
+  }
+  if (beforeMod.bmRightAlt != afterMod.bmRightAlt) {
+    Serial.println("RightAlt changed");
+  }
+  if (beforeMod.bmRightGUI != afterMod.bmRightGUI) {
+    Serial.println("RightGUI changed");
+  }
+
+}
+
+void KbdRptParser::OnKeyUp(uint8_t mod, uint8_t key)
+{
+  Serial.print("UP ");
+  PrintKey(mod, key);
+}
+
+void KbdRptParser::OnKeyPressed(uint8_t key)
+{
+  Serial.print("ASCII: ");
+  Serial.println((char)key);
+};
+
+USB     Usb;
+USBHub     Hub(&Usb);
+
+HIDBoot < USB_HID_PROTOCOL_KEYBOARD > HidComposite(&Usb);
+HIDBoot<USB_HID_PROTOCOL_KEYBOARD>    HidKeyboard(&Usb);
+
+KbdRptParser KbdPrs;
+
+
+
+
+
+
+
+
+
+
 
 
 /* 
@@ -294,8 +341,6 @@ ISR(PCINT1_vect) {
   byte addr = PINC & 0x3f;
   byte row = addr>>3;
 
-  kChangeCount++;
-  
   digitalWrite(ATARI_PIN_KR1, kr1Matrix[addr]);
   digitalWrite(ATARI_PIN_KR2, kr2Matrix[row]);
 }
@@ -307,14 +352,10 @@ ISR(PCINT1_vect) {
 void setup() {
 #ifdef DEBUG
   Serial.begin(57600);
-  Serial.println("PS2 keyboard to Atari 8-bit translator");
+  Serial.println("USB keyboard to Atari 8-bit translator");
   Serial.println("by Bob Green <bob@wookey.org.uk>, Jan 2018.");
   Serial.println();
 #endif
-
-  // PS2 keyboard interface
-  pinMode(PS2_CLOCK_PIN, INPUT_PULLUP);
-  pinMode(PS2_DATA_PIN, INPUT_PULLUP);
 
   // Atari interface
   pinMode(ATARI_PIN_ROW0, INPUT);        // POKEY pins K0:5
@@ -349,17 +390,23 @@ void setup() {
     kr2Matrix[i] = SWITCH_OPEN;
   }
 
-  /* 
-   *  Enable interrupts on falling edge of PS2 keyboard clock change 
-   */
-  cli();
-  PCICR |= 0b00000100;        // Enable port D pin change interrupts
-  PCMSK2 |= 0b10001000;       // Port D, pin 3 will interrupt on change
+
+
+  if (Usb.Init() == -1)
+    Serial.println("OSC did not start.");
+
+  delay( 200 );
+
+  HidComposite.SetReportParser(0, &KbdPrs);
+  HidKeyboard.SetReportParser(0, &KbdPrs);
+
+
 
 
   /*
    * Enable interrupts when K5:0 change, falling or rising edges
    */
+  cli();
   PCICR |= 0b00000010;        // Enable port C pin change interrupts
   PCMSK1 |= 0b00000001;       // Port C, pin 0 will interrupt on change
   sei();
@@ -371,70 +418,7 @@ void setup() {
  *  state.
  */
 void loop() {
-  byte keyCode = getKeyCode();
-  bool alternative = false;
-  bool pressed = true;
-  byte atariKey;
-  static byte pauseSequence[] = {0x14, 0x77, 0xe1, 0xf0, 0x14, 0xf0, 0x77};
-
-  if (keyCode == 0xe1) {
-    /*
-     * Special case - just one key generates a 0xE1 prefix - the Pause key. There may be a 
-     * cleaner way to deal with this, but this one works - kind of!
-     */
-    bool pause = expect(pauseSequence, 7);
-
-    if (pause) {
-      /*
-       * I'm mapping the 8 byte pause key sequence to a single unused keycode, 0x7f.
-       * Note. This key only ever sends a "key pressed" sequence, and never a "key released"
-       */
-      keyCode = 0x7f;
-    }
-  }
-  
-  while (keyCode & 0x80) {
-    if (keyCode == 0xe0) {
-      alternative = true;
-    }
-    else if (keyCode == 0xf0) {
-      pressed = false;
-    }
-
-    keyCode = getKeyCode();
-  }
-
-  atariKey = (alternative)?pgm_read_byte_near(extendedKeymap + keyCode):pgm_read_byte_near(coreKeymap + keyCode);
-
-#ifdef DEBUG
-  Serial.print(pressed?"Press: ":"Release: ");
-  Serial.print(keyCode, HEX);
-  if (alternative) {
-    Serial.print(" (ext)");
-  }
-
-  if (atariKey == ATARI_NOKEY) {
-    Serial.println(" - not mapped");
-  }
-  else {
-    Serial.print(" -> ");
-    Serial.println(atariKey);
-  }
-
-  /*
-   * When DEBUG is defined, pressing F1 will dump the current keyboard 
-   * state data
-   */
-   if (pressed && !alternative && keyCode == 5) {
-      dumpState();
-      atariKey = ATARI_NOKEY;
-   }
-#endif
-
-  // Update the virtual keyboard state with the Atari equivalent key
-  //if (atariKey != ATARI_NOKEY) {
-    keyAction(atariKey, pressed);
-  //}
+  Usb.Task();
 }
 
 
@@ -446,19 +430,8 @@ void loop() {
  * deasserts RESET one the time defined by RESET_MILLIS
  */
 byte getKeyCode() {
-  byte keyCode;
+  byte keyCode = 42;
   
-  while (head == tail) {
-    checkResetTimer();
-  }
-  
-  keyCode = keyBuff[tail];
-  tail++;
-
-  if (tail >= KEY_BUFF_SIZE) {
-    tail = 0;
-  }
-
 #ifdef DEBUG
   Serial.print(" [");
   Serial.print(keyCode, HEX);
@@ -466,19 +439,6 @@ byte getKeyCode() {
 #endif
 
   return keyCode;
-}
-
-
-bool expect(const byte *bytes, int count) {
-  for (int i=0; i<count; i++) {
-    byte key = getKeyCode();
-
-    if (key != bytes[i]) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 
@@ -606,8 +566,5 @@ void dumpState() {
   }
 
   Serial.println();
-
-  Serial.print("K0:5 change counter: ");
-  Serial.println(kChangeCount);
 }
 #endif
