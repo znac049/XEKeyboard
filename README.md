@@ -7,12 +7,13 @@ they are now 30+ years old and its getting increasingly difficult to keep
 those old keyboards working, or to find replacements. This project came about
 when the keyboard on my Atari 65XE failed and to get it working, I'm going
 to have to do some fairly major flexible track reconstruction. It occurred
-to me that it wouldn't be too difficult to interface an old PS2 keyboard
+to me that it wouldn't be too difficult to interface a USB keyboard
 to the 65XE with something like an Arduino. This would have a few advantages:
 
  - USB keyboards are cheap and easy to acquire
  - USB keyboards, even the really cheap ones, are of an infintely higher quality to the original Atari keyboard
  - Arduinos are cheap so will be good for prototyping
+ - Wireless USB keyboards are cheap and readily available
 
 It was also a requirement that the Atari wouldn't be aware of the change
 
