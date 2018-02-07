@@ -46,7 +46,7 @@ assumption I'd made, namely that the six bit row/col counter only ever increment
 This means the interrupt handling in the Arduino becomes much simpler as it only
 needs to trigger on a change on the LSB of the counter (just a single pin).
 
-### PS2 keyboard
+### USB keyboard
 Much has been written about the PS2 keyboard so I won't really revisit that here
 other than to say it's pretty straightforward to hook one up to an Arduino
 (other microcontrollers are available!) to read the raw key press and release
@@ -60,30 +60,29 @@ and PRINT SCREEN generates a data stream that is quite different from all the
 others, making it more complicated to decode._
 
 #### Links
-The PS2 keyboard keycode table I used can be found [here](http://www.computer-engineering.org/ps2keyboard/scancodes2.html). Another useful page describing the PS2 keyboard is [here](http://www.computer-engineering.org/ps2protocol/)
 
-### Hardware
-I used an Arduino UNO for this as I had one and it has enough pins to do the job. Porting
-to another Arduino device would be pretty simple. When allocating pins on other Arduino hardware
-consider the following:
+### Prototype Hardware
+I used an Arduino UNO for this as I had one and it has enough I/O to do the job. For the USB
+interface, I used an Arduino USB host shield based on the MAX3421E USB Host Controller chip.
 
- * Ensure that the K0 signal from the POKEY and the PS2 keyboard Clock signals are connected to different Pin Change Interrupt groups.
- * The current code assumes that the six key address signals (K0:5) from the POKEY are connected to the lower six bits of a single port on the ATMega device, with K0 as bit 0 through to K5 on bit 5. It means I can read the address as a single port access so is fast. If you can't do this, you'll need to fix the code that reads the address so that it builds the address by reading and combining whichever pins you use.
+### Final Hardware
+I envisage a custom board based around the ATMEL ATMega-328P microcontroller and the MAX3421E
+USB Host Controller. The MAX3421E is a 3.3v device and everything else is 5v, so care will need
+to be taken to ensure the right signal levels are used. A couple of 74LVC125 level converters
+should do the trick.
  
 ### Software
 The code in the Arduino has three(four) main jobs:
 
- 1. Receive data from the PS2 keyboard
- 1. Process the PS2 keycodes and mapping them to their equivalent Atari key (if they have one)
+ 1. Receive data from the USB keyboard
+ 1. Process the keycodes and map them to their equivalent Atari key (if they have one)
  1. Mimic the Atari keyboard at a hardware level
- 1. If compiled in, pressing F1 will cause a load of information to be sent to the serial port (57600 baud)
+ 1. If compiled in, pressing Alt-PrtScr will cause a load of state information to be sent to the serial port (57600 baud)
 
 The code relies on pin change interrupts. The
 Arduino only has three pin change interrupt vectors, each
 vector handling the change events for a particular group of pins (Ports B, C and D).
-Only two pins need to generate pin change interrupts, POKEY K0 and the PS2 keyboard clock, so it
-keeps things simple by making sure those two pins are in different pin change interrupt
-groups.
+Only one pin needs to generate pin change interrupts, POKEY K0.
 
 _Note. key presses are active low, so pressing a key pulls a signal down to logic 0._
 
@@ -103,7 +102,7 @@ single byte is stored in a small keycode buffer. The interrupt handler also deal
 data signal corruption by timing out a keycode read if too much time has elapsed since
 the first bit arrived.
 
-#### Processing PS2 keycodes
+#### Processing USB keycodes
 Processing keycodes is pretty simple and consists of a polling loop which waits for
 key data to arrive in the input buffer. Once sufficient bytes have been read to identify
 whether its a key press or release and whether its a stadard or extended keycode, the arduino
