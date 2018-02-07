@@ -5,6 +5,9 @@
 
 #define DEBUG
 
+void handleKey(byte key, byte mod, bool pressed);
+void keyAction(byte key, bool pressed);
+
 #ifdef DEBUG
 void dumpState();
 #endif
@@ -206,6 +209,14 @@ bool startKey = SWITCH_OPEN;
 bool selectKey = SWITCH_OPEN;
 bool optionKey = SWITCH_OPEN;
 
+/*
+ * USB keybaord state
+ */
+bool controlPressed = false;
+bool shiftPressed = false;
+bool altPressed = false;
+bool winPressed = false;
+
 
 
 /* 
@@ -243,16 +254,27 @@ void KbdRptParser::PrintKey(uint8_t m, uint8_t key)
 
 void KbdRptParser::OnKeyDown(uint8_t mod, uint8_t key)
 {
+#ifdef DEBUG
   Serial.print("DN ");
   PrintKey(mod, key);
   uint8_t c = OemToAscii(mod, key);
 
-  if (key == 0x4d) {  // 'End' key - dump state;
-    dumpState();
+  if (c) {
+    Serial.print("'");
+    Serial.print(c);
+    Serial.println("'");
   }
-  
-  if (c)
-    OnKeyPressed(c);
+#endif
+
+  handleKey(key, mod, true);
+}
+
+void KbdRptParser::OnKeyUp(uint8_t mod, uint8_t key)
+{
+  Serial.print("UP ");
+  PrintKey(mod, key);
+
+  handleKey(key, mod, false);
 }
 
 void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after) {
@@ -263,45 +285,26 @@ void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after) {
   MODIFIERKEYS afterMod;
   *((uint8_t*)&afterMod) = after;
 
+
+  controlPressed = afterMod.bmLeftCtrl || afterMod.bmRightCtrl;
+  shiftPressed = afterMod.bmLeftShift || afterMod.bmRightShift;
+  altPressed = afterMod.bmLeftAlt || afterMod.bmRightAlt;
+  winPressed = afterMod.bmLeftGUI || afterMod.bmRightGUI;
+
   if (beforeMod.bmLeftCtrl != afterMod.bmLeftCtrl) {
-    Serial.println("LeftCtrl changed");
+    keyAction(ATARI_KEY_CTRL, afterMod.bmLeftCtrl);
   }
+  else if (beforeMod.bmRightCtrl != afterMod.bmRightCtrl) {
+    keyAction(ATARI_KEY_CTRL, afterMod.bmRightCtrl);
+  }
+
   if (beforeMod.bmLeftShift != afterMod.bmLeftShift) {
-    Serial.println("LeftShift changed");
+    keyAction(ATARI_KEY_SHIFT, afterMod.bmLeftShift);
   }
-  if (beforeMod.bmLeftAlt != afterMod.bmLeftAlt) {
-    Serial.println("LeftAlt changed");
+  else if (beforeMod.bmRightShift != afterMod.bmRightShift) {
+    keyAction(ATARI_KEY_SHIFT, afterMod.bmRightShift);
   }
-  if (beforeMod.bmLeftGUI != afterMod.bmLeftGUI) {
-    Serial.println("LeftGUI changed");
-  }
-
-  if (beforeMod.bmRightCtrl != afterMod.bmRightCtrl) {
-    Serial.println("RightCtrl changed");
-  }
-  if (beforeMod.bmRightShift != afterMod.bmRightShift) {
-    Serial.println("RightShift changed");
-  }
-  if (beforeMod.bmRightAlt != afterMod.bmRightAlt) {
-    Serial.println("RightAlt changed");
-  }
-  if (beforeMod.bmRightGUI != afterMod.bmRightGUI) {
-    Serial.println("RightGUI changed");
-  }
-
 }
-
-void KbdRptParser::OnKeyUp(uint8_t mod, uint8_t key)
-{
-  Serial.print("UP ");
-  PrintKey(mod, key);
-}
-
-void KbdRptParser::OnKeyPressed(uint8_t key)
-{
-  Serial.print("ASCII: ");
-  Serial.println((char)key);
-};
 
 USB     Usb;
 USBHub     Hub(&Usb);
@@ -379,8 +382,6 @@ void setup() {
 
   HidComposite.SetReportParser(0, &KbdPrs);
   HidKeyboard.SetReportParser(0, &KbdPrs);
-
-
 
 
   /*
@@ -498,13 +499,27 @@ void keyAction(byte atariKey, bool pressed) {
           break;
           
         case ATARI_KEY_RESET:
-          assertReset();
+          if (pressed) {
+            assertReset();
+          }
           break;
       }
     }
   }
 }
 
+void handleKey(byte key, byte mod, bool pressed) {
+  if (pressed && altPressed && (key == 0x4d)) {
+    dumpState();  
+  }
+  else {
+    key = pgm_read_byte_near(keyMap + key);
+
+    if (key) {
+      keyAction(key, pressed);
+    }
+  }
+}
 
 #ifdef DEBUG
 
@@ -512,7 +527,25 @@ void keyAction(byte atariKey, bool pressed) {
  * Dump internal state to serial port
  */
 void dumpState() {
+  static char *names[] = {
+    " A ", " S ", " G ", " cl", " nk", " D ", " H ", " F ",
+    " > ", " < ", " 8 ", "del", " 7 ", " 0 ", " nk", " 9 ",
+    " Q ", " W ", " T ", "tab", " Y ", " E ", " nk", " R ",
+    "inv", " / ", " M ", " nk", " N ", " st", " sp", " , ",
+    " 1 ", " 2 ", " 5 ", "esc", " 6 ", " 3 ", " nk", " 4 ",
+    " Z ", " X ", " B ", " nk", " nk", " C ", "hlp", " V ",
+    " = ", " - ", " I ", "ret", " U ", " P ", " nk", " O ",
+    " * ", " + ", " K ", " nk", " nk", " ; ", " J ", " L "
+    };
+
+
   Serial.println("Keyboard state:");
+
+  Serial.print(" USB modifiers: ");
+  Serial.print(controlPressed?"CTRL ":"");
+  Serial.print(shiftPressed?"SHIFT ":"");
+  Serial.print(altPressed?"ALT ":"");
+  Serial.println(winPressed?"WIN":"");
 
   if (resetInProgress) {
       unsigned long now = millis();
@@ -539,7 +572,7 @@ void dumpState() {
   Serial.println("matrix:                       matrix:");
   for (int row=0; row<8; row++) {
     for (int col=0; col<8; col++) {
-      Serial.print(kr1Matrix[(row*8)+col]==SWITCH_CLOSED?" X ":" . ");
+      Serial.print(kr1Matrix[(row*8)+col]==SWITCH_CLOSED?names[(row*8)+col]:" . ");
     }
     
     Serial.println(kr2Matrix[row]==SWITCH_CLOSED?"      X":"      .");
