@@ -10,8 +10,19 @@ void keyAction(byte key, bool pressed);
 
 #ifdef DEBUG
 void dumpState();
+void printBin(byte);
+void printHex(byte);
 #endif
 
+/*
+ * NAX3421E Interface
+ * 
+ * MOSI
+ * MISO
+ * SCLK
+ * SS
+ * INT
+ */
 
 /*
  * Connecting to the Atari 65XE
@@ -23,22 +34,22 @@ void dumpState();
  * POKEY ~K4   U25, pin 10     18 in
  * POKEY ~K5   U25, pin 9      19 in
  * 
- * POKEY ~KR1  U22, pin 25     8  out   Currently selected switch in 8x8 matrix
- * POKEY ~KR2  U22, pin16      9  out   Break/Shift/Control keys
+ * POKEY ~KR1  U22, pin 25     6  out   Currently selected switch in 8x8 matrix
+ * POKEY ~KR2  U22, pin16      5  out   Break/Shift/Control keys
  * 
- * GTIA   S0   U17, pin 12     10 out   Start button
- * GTIA   S1   U17, pin 13     11 out   Select button
- * GTIA   S2   U17, pin 14     12 out   Option button
+ * GTIA   S0   U17, pin 12     4  out   Start button
+ * GTIA   S1   U17, pin 13     3  out   Select button
+ * GTIA   S2   U17, pin 14     2  out   Option button
  * 
- * RESET       L14             4  out   Reset button
+ * RESET       L14             7  out   Reset button
  * 
  */
-#define ATARI_PIN_RESET  4
-#define ATARI_PIN_KR1    8
-#define ATARI_PIN_KR2    9
-#define ATARI_PIN_START  10
-#define ATARI_PIN_SELECT 11
-#define ATARI_PIN_OPTION 12
+#define ATARI_PIN_RESET  7
+#define ATARI_PIN_KR1    6
+#define ATARI_PIN_KR2    5
+#define ATARI_PIN_START  4
+#define ATARI_PIN_SELECT 3
+#define ATARI_PIN_OPTION 2
 
 #define ATARI_PIN_ROW0   14     // The code assumes the ROWx and COLx pins are all
 #define ATARI_PIN_ROW1   15     // connected to the bottom 6 bits of PortC. The
@@ -52,6 +63,7 @@ void dumpState();
  * on the ~KR1 pin
  */
 #define ATARI_NOKEY     255
+#define ATARI_SPECIAL   254
 
 #define ATARI_KEY_A     0     // 0,0
 #define ATARI_KEY_S     1
@@ -166,7 +178,7 @@ const PROGMEM byte keyMap[] = {
   ATARI_KEY_U,     ATARI_KEY_V,     ATARI_KEY_W,     ATARI_KEY_X,     ATARI_KEY_Y,     ATARI_KEY_Z,     ATARI_KEY_1,     ATARI_KEY_2,
 
   ATARI_KEY_3,     ATARI_KEY_4,     ATARI_KEY_5,     ATARI_KEY_6,     ATARI_KEY_7,     ATARI_KEY_8,     ATARI_KEY_9,     ATARI_KEY_0,
-  ATARI_KEY_RET,   ATARI_KEY_ESC,   ATARI_KEY_DEL,   ATARI_KEY_TAB,   ATARI_KEY_SPACE, ATARI_KEY_MINUS, ATARI_KEY_EQ,    ATARI_KEY_2,
+  ATARI_KEY_RET,   ATARI_KEY_ESC,   ATARI_KEY_DEL,   ATARI_KEY_TAB,   ATARI_KEY_SPACE, ATARI_KEY_MINUS, ATARI_SPECIAL,   ATARI_KEY_2,
 
   ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_SEMI,  ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_COMMA, ATARI_KEY_FSTOP,
   ATARI_KEY_SLASH, ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_NOKEY,     ATARI_KEY_START, ATARI_KEY_SELECT,
@@ -215,8 +227,7 @@ bool optionKey = SWITCH_OPEN;
 bool controlPressed = false;
 bool shiftPressed = false;
 bool altPressed = false;
-bool winPressed = false;
-
+bool guiPressed = false;
 
 
 /* 
@@ -235,35 +246,39 @@ class KbdRptParser : public KeyboardReportParser
 
 void KbdRptParser::PrintKey(uint8_t m, uint8_t key)
 {
+  byte c = OemToAscii(m, key);
   MODIFIERKEYS mod;
+  
   *((uint8_t*)&mod) = m;
-  Serial.print((mod.bmLeftCtrl   == 1) ? "C" : " ");
-  Serial.print((mod.bmLeftShift  == 1) ? "S" : " ");
-  Serial.print((mod.bmLeftAlt    == 1) ? "A" : " ");
-  Serial.print((mod.bmLeftGUI    == 1) ? "G" : " ");
+  
+  Serial.print((mod.bmLeftCtrl)  ? "C" : "-");
+  Serial.print((mod.bmLeftShift) ? "S" : "-");
+  Serial.print((mod.bmLeftAlt)   ? "A" : "-");
+  Serial.print((mod.bmLeftGUI)   ? "G" : "-");
 
-  Serial.print(" >");
-  PrintHex<uint8_t>(key, 0x80);
-  Serial.print("< ");
+  Serial.print(" [");
+  printHex(key);
+  Serial.print("] ");
 
-  Serial.print((mod.bmRightCtrl   == 1) ? "C" : " ");
-  Serial.print((mod.bmRightShift  == 1) ? "S" : " ");
-  Serial.print((mod.bmRightAlt    == 1) ? "A" : " ");
-  Serial.println((mod.bmRightGUI    == 1) ? "G" : " ");
+  Serial.print((mod.bmRightCtrl)  ? "C" : "-");
+  Serial.print((mod.bmRightShift) ? "S" : "-");
+  Serial.print((mod.bmRightAlt)   ? "A" : "-");
+  Serial.print((mod.bmRightGUI) ? "G" : "-");
+
+  if (c) {
+    Serial.print(" '");
+    Serial.print((char)c);
+    Serial.print("'");
+  }
+
+  Serial.println();
 };
 
 void KbdRptParser::OnKeyDown(uint8_t mod, uint8_t key)
 {
 #ifdef DEBUG
-  Serial.print("DN ");
+  Serial.print("DN: ");
   PrintKey(mod, key);
-  uint8_t c = OemToAscii(mod, key);
-
-  if (c) {
-    Serial.print("'");
-    Serial.print(c);
-    Serial.println("'");
-  }
 #endif
 
   handleKey(key, mod, true);
@@ -271,39 +286,42 @@ void KbdRptParser::OnKeyDown(uint8_t mod, uint8_t key)
 
 void KbdRptParser::OnKeyUp(uint8_t mod, uint8_t key)
 {
-  Serial.print("UP ");
+#ifdef DEBUG
+  Serial.print("UP: ");
   PrintKey(mod, key);
+#endif
 
   handleKey(key, mod, false);
 }
 
+/*
+ * Handle the case when either control or shift key changes as this needs to be mapped to 
+ * a KR2 change
+ */
 void KbdRptParser::OnControlKeysChanged(uint8_t before, uint8_t after) {
-
   MODIFIERKEYS beforeMod;
   *((uint8_t*)&beforeMod) = before;
 
   MODIFIERKEYS afterMod;
   *((uint8_t*)&afterMod) = after;
 
+  bool newControl = afterMod.bmLeftCtrl || afterMod.bmRightCtrl;
+  bool newShift = afterMod.bmLeftShift || afterMod.bmRightShift;
 
-  controlPressed = afterMod.bmLeftCtrl || afterMod.bmRightCtrl;
-  shiftPressed = afterMod.bmLeftShift || afterMod.bmRightShift;
+  if (newControl != controlPressed) {
+    Serial.println("Ctrl changed");
+    controlPressed = newControl;
+    keyAction(ATARI_KEY_CTRL, controlPressed);
+  }
+
+  if (newShift != shiftPressed) {
+    Serial.println("Shift changed");
+    shiftPressed = newShift;  
+    keyAction(ATARI_KEY_SHIFT, shiftPressed);
+  }
+
   altPressed = afterMod.bmLeftAlt || afterMod.bmRightAlt;
-  winPressed = afterMod.bmLeftGUI || afterMod.bmRightGUI;
-
-  if (beforeMod.bmLeftCtrl != afterMod.bmLeftCtrl) {
-    keyAction(ATARI_KEY_CTRL, afterMod.bmLeftCtrl);
-  }
-  else if (beforeMod.bmRightCtrl != afterMod.bmRightCtrl) {
-    keyAction(ATARI_KEY_CTRL, afterMod.bmRightCtrl);
-  }
-
-  if (beforeMod.bmLeftShift != afterMod.bmLeftShift) {
-    keyAction(ATARI_KEY_SHIFT, afterMod.bmLeftShift);
-  }
-  else if (beforeMod.bmRightShift != afterMod.bmRightShift) {
-    keyAction(ATARI_KEY_SHIFT, afterMod.bmRightShift);
-  }
+  guiPressed = afterMod.bmLeftGUI || afterMod.bmRightGUI;
 }
 
 USB     Usb;
@@ -400,26 +418,7 @@ void setup() {
  */
 void loop() {
   Usb.Task();
-}
-
-
-/*
- * Wait for a key code byte from the PS2 keyboard
- * 
- * Will block forever if no key pressed.
- * While waiting it checks to see if there is a RESET operation in progress and
- * deasserts RESET one the time defined by RESET_MILLIS
- */
-byte getKeyCode() {
-  byte keyCode = 42;
-  
-#ifdef DEBUG
-  Serial.print(" [");
-  Serial.print(keyCode, HEX);
-  Serial.print("] ");
-#endif
-
-  return keyCode;
+  checkResetTimer();
 }
 
 
@@ -500,6 +499,7 @@ void keyAction(byte atariKey, bool pressed) {
           
         case ATARI_KEY_RESET:
           if (pressed) {
+            Serial.println("RESET pressed");
             assertReset();
           }
           break;
@@ -508,15 +508,52 @@ void keyAction(byte atariKey, bool pressed) {
   }
 }
 
-void handleKey(byte key, byte mod, bool pressed) {
-  if (pressed && altPressed && (key == 0x4d)) {
-    dumpState();  
+void handleOOBkey(byte key, byte pressed) {
+  switch (key) {
+    // Alt-END
+    case 0x4d:
+      dumpState();
+      break;
+  }
+}
+void handleKey(byte key, byte m, bool pressed) {
+  MODIFIERKEYS mod;  
+  *((uint8_t*)&mod) = m;
+
+  if (pressed && altPressed) {
+    handleOOBkey(key, pressed);  
   }
   else {
-    key = pgm_read_byte_near(keyMap + key);
+    byte atariKey = pgm_read_byte_near(keyMap + key);
 
-    if (key) {
-      keyAction(key, pressed);
+    switch (atariKey) {
+      case ATARI_NOKEY:
+        break;
+
+      case ATARI_SPECIAL:
+        Serial.println("Special processing needed");
+        /*
+         * This takes care of cases where a single USB keyboard key maps to a 
+         * different Atari key, depending on whether its shifted or not. So for
+         * example the = key on the USB keyboard when shifted gives +. The +
+         * The shifted USB key has to suppress the Shift Atari swicth
+         */
+        if (key == 0x2e) {
+          Serial.println("=/+");
+          if (shiftPressed) {
+            keyAction(ATARI_KEY_SHIFT, false);
+            keyAction(ATARI_KEY_PLUS, pressed);
+          }
+          else {
+            keyAction(ATARI_KEY_EQ, pressed);
+          }
+        }
+        dumpState();
+        break;
+
+      default:
+        keyAction(atariKey, pressed);
+        break;
     }
   }
 }
@@ -542,10 +579,10 @@ void dumpState() {
   Serial.println("Keyboard state:");
 
   Serial.print(" USB modifiers: ");
-  Serial.print(controlPressed?"CTRL ":"");
-  Serial.print(shiftPressed?"SHIFT ":"");
-  Serial.print(altPressed?"ALT ":"");
-  Serial.println(winPressed?"WIN":"");
+  Serial.print(controlPressed?"CTRL ":" ");
+  Serial.print(shiftPressed?"SHIFT ":" ");
+  Serial.print(altPressed?"ALT ":" ");
+  Serial.println(guiPressed?"GUI":"");
 
   if (resetInProgress) {
       unsigned long now = millis();
@@ -557,14 +594,10 @@ void dumpState() {
     Serial.println("RESET  Inactive");
   }
 
-  Serial.print("START  ");
-  Serial.println(startKey==SWITCH_CLOSED?"Asserted":"Inactive");
-
-  Serial.print("SELECT ");
-  Serial.println(selectKey==SWITCH_CLOSED?"Asserted":"Inactive");
-
-  Serial.print("OPTION ");
-  Serial.println(optionKey==SWITCH_CLOSED?"Asserted":"Inactive");
+  Serial.print("SPECIAL KEYS: ");
+  Serial.println(startKey==SWITCH_CLOSED?"Start":" ");
+  Serial.println(selectKey==SWITCH_CLOSED?"Select":" ");
+  Serial.println(optionKey==SWITCH_CLOSED?"Option":"");
 
   Serial.println();
 
@@ -579,5 +612,16 @@ void dumpState() {
   }
 
   Serial.println();
+}
+
+void printBin(byte val) {
+  for (int i=7; i>=0; i--) {
+    Serial.print((val & (1<<i))?"1":"0");
+  }
+}
+
+void printHex(byte val) {
+  Serial.print(val>>4, HEX);
+  Serial.print(val&0x0f, HEX);
 }
 #endif
